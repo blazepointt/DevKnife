@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ru" class="h-full">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DevKnife Workbench</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'Segoe UI', 'Roboto', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace']
+      }
+    }
+  }
+};
+</script>
+<style>
+  html, body { height: 100%; background: #09090b; color: #e4e4e7; }
+  ::selection { background: rgba(99, 102, 241, .35); }
+  .scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .scroll::-webkit-scrollbar-track { background: transparent; }
+  .scroll::-webkit-scrollbar-thumb { background: #27272a; border-radius: 8px; border: 2px solid #09090b; }
+  .scroll::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+  .scroll { scrollbar-width: thin; scrollbar-color: #27272a transparent; }
+  .pulse-dot { animation: pulse 1.8s cubic-bezier(.4, 0, .6, 1) infinite; }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .55); } 50% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); } }
+  .pulse-dot.off { background: #ef4444; animation: none; }
+  .spin { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .drop-active { outline: 2px dashed #8b5cf6; outline-offset: -8px; background: rgba(139, 92, 246, .06); }
+  .j-key { color: #a5b4fc; } .j-str { color: #86efac; } .j-num { color: #fcd34d; }
+  .j-bool { color: #f0abfc; } .j-null { color: #71717a; }
+  :focus-visible { outline: 2px solid #8b5cf6; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .pulse-dot, .spin { animation: none; } }
+</style>
+</head>
+<body class="font-sans text-sm antialiased overflow-hidden">
+<div class="flex h-full">
+
+  <!-- Sidebar -->
+  <aside class="hidden md:flex w-[260px] shrink-0 flex-col border-r border-[#27272a] bg-[#09090b]">
+    <div class="h-14 flex items-center gap-2.5 px-4 border-b border-[#27272a]">
+      <div class="h-8 w-8 rounded-lg bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center">
+        <i data-lucide="swiss-franc" class="h-4 w-4 text-white"></i>
+      </div>
+      <span class="font-semibold text-[15px] tracking-tight text-zinc-100">DevKnife</span>
+      <span class="ml-auto rounded-md border border-[#27272a] bg-[#121216] px-1.5 py-0.5 font-mono text-[11px] text-zinc-400">v0.1.0</span>
+    </div>
+
+    <div class="p-3">
+      <label class="relative block">
+        <i data-lucide="search" class="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"></i>
+        <input id="toolFilter" type="text" placeholder="Search tools..." autocomplete="off"
+          class="w-full rounded-lg border border-[#27272a] bg-[#121216] py-2 pl-8 pr-3 text-zinc-200 placeholder-zinc-500 focus:border-[#6366f1] focus:outline-none">
+      </label>
+    </div>
+
+    <nav id="nav" class="scroll flex-1 overflow-y-auto px-3 pb-3 space-y-1" aria-label="Tools"></nav>
+    <p id="navEmpty" class="hidden px-4 pb-4 text-zinc-500">No tools match the filter.</p>
+
+    <div class="border-t border-[#27272a] px-4 py-3 text-xs text-zinc-500 flex items-center justify-between">
+      <span>Local workbench</span>
+      <span class="font-mono">Ctrl+Enter to run</span>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="flex min-w-0 flex-1 flex-col">
+    <header class="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[#27272a] bg-[#09090b] px-4">
+      <div class="flex min-w-0 items-center gap-2 text-zinc-400">
+        <span>DevKnife</span><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-zinc-600"></i>
+        <span>Core</span><i data-lucide="chevron-right" class="h-3.5 w-3.5 text-zinc-600"></i>
+        <span class="truncate font-medium text-zinc-100">Ping Pipeline</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <div id="apiStatus" class="flex items-center gap-2 rounded-full border border-[#27272a] bg-[#121216] px-3 py-1.5 font-mono text-xs text-zinc-300">
+          <span id="apiDot" class="pulse-dot off inline-block h-2 w-2 rounded-full bg-green-500"></span>
+          <span id="apiText">API: connecting...</span>
+        </div>
+        <button id="clearAll" type="button"
+          class="flex items-center gap-1.5 rounded-lg border border-[#27272a] bg-[#121216] px-3 py-1.5 text-zinc-300 hover:border-[#3f3f46] hover:text-white">
+          <i data-lucide="eraser" class="h-4 w-4"></i><span>Очистить всё</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="flex min-h-0 flex-1 flex-col md:flex-row">
+
+      <!-- Input -->
+      <section class="flex min-h-0 min-w-0 flex-1 flex-col border-b border-[#27272a] md:border-b-0 md:border-r md:basis-1/2">
+        <div class="flex h-11 shrink-0 items-center justify-between border-b border-[#27272a] bg-[#121216] px-3">
+          <div class="flex items-center gap-2 font-medium text-zinc-200">
+            <i data-lucide="arrow-down-to-line" class="h-4 w-4 text-[#8b5cf6]"></i>Input
+            <span id="counter" class="ml-2 font-mono text-xs font-normal text-zinc-500">0 chars · 0 lines</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button id="pasteBtn" type="button" class="flex items-center gap-1.5 rounded-md px-2 py-1 text-zinc-400 hover:bg-[#1c1c22] hover:text-white">
+              <i data-lucide="clipboard-paste" class="h-4 w-4"></i><span>Paste from Clipboard</span>
+            </button>
+            <button id="clearInput" type="button" class="flex items-center gap-1.5 rounded-md px-2 py-1 text-zinc-400 hover:bg-[#1c1c22] hover:text-white">
+              <i data-lucide="x" class="h-4 w-4"></i><span>Clear</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="dropZone" class="relative min-h-0 flex-1 bg-[#09090b]">
+          <textarea id="input" spellcheck="false" placeholder="Type or paste text here, or drop a text file..."
+            class="scroll absolute inset-0 h-full w-full resize-none bg-transparent p-4 font-mono text-[13px] leading-6 text-zinc-200 placeholder-zinc-600 focus:outline-none"></textarea>
+        </div>
+
+        <div class="flex shrink-0 items-center justify-between gap-3 border-t border-[#27272a] bg-[#121216] p-3">
+          <span class="text-xs text-zinc-500">Drag a .txt / .json / .yaml file into the editor</span>
+          <button id="runBtn" type="button"
+            class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#6366f1] to-[#8b5cf6] px-4 py-2 font-medium text-white shadow-lg shadow-indigo-950/40 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">
+            <i id="runIcon" data-lucide="play" class="h-4 w-4"></i>
+            <span>Выполнить</span><span class="font-mono text-xs text-indigo-200">(Ctrl+Enter)</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Output -->
+      <section class="flex min-h-0 min-w-0 flex-1 flex-col md:basis-1/2">
+        <div class="flex h-11 shrink-0 items-center justify-between border-b border-[#27272a] bg-[#121216] px-3">
+          <div role="tablist" class="flex h-full items-end gap-1">
+            <button role="tab" id="tabFormatted" data-tab="formatted" aria-selected="true" type="button"
+              class="tab h-full border-b-2 border-[#8b5cf6] px-3 font-medium text-zinc-100">Formatted Result</button>
+            <button role="tab" id="tabRaw" data-tab="raw" aria-selected="false" type="button"
+              class="tab h-full border-b-2 border-transparent px-3 font-medium text-zinc-500 hover:text-zinc-300">Raw JSON Response</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="timeBadge" class="hidden items-center gap-1 rounded-md border border-[#27272a] bg-[#09090b] px-2 py-0.5 font-mono text-xs text-zinc-300">
+              <i data-lucide="timer" class="h-3.5 w-3.5 text-[#8b5cf6]"></i><span id="timeVal">0 ms</span>
+            </span>
+            <span id="statusBadge" class="hidden rounded-md border px-2 py-0.5 font-mono text-xs"></span>
+            <button id="copyBtn" type="button" class="flex items-center gap-1.5 rounded-md px-2 py-1 text-zinc-400 hover:bg-[#1c1c22] hover:text-white">
+              <i id="copyIcon" data-lucide="copy" class="h-4 w-4"></i><span id="copyLabel">Копировать результат</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="scroll min-h-0 flex-1 overflow-auto bg-[#09090b] p-4">
+          <div id="emptyState" class="flex h-full flex-col items-center justify-center gap-2 text-center text-zinc-500">
+            <i data-lucide="terminal-square" class="h-8 w-8 text-zinc-700"></i>
+            <p>Result will appear here.</p>
+            <p class="text-xs">Enter text on the left and press <span class="font-mono text-zinc-400">Ctrl+Enter</span>.</p>
+          </div>
+          <div id="formattedView" class="hidden">
+            <pre id="formattedOut" class="whitespace-pre-wrap break-words font-mono text-[13px] leading-6 text-zinc-200"></pre>
+            <div id="warnBox" class="mt-4 hidden space-y-1.5"></div>
+            <div id="metricsBox" class="mt-4 hidden flex-wrap gap-2"></div>
+          </div>
+          <pre id="rawView" class="hidden whitespace-pre font-mono text-[13px] leading-6 text-zinc-300"></pre>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var TOOLS = [
+    { id: 'ping',   name: 'Ping / Echo Pipeline',        icon: 'zap',          active: true },
+    { id: 'format', name: 'Format Converter (JSON/YAML/TOML)', icon: 'file-json', soon: true },
+    { id: 'crypto', name: 'Crypto & Hashes',             icon: 'lock-keyhole', soon: true },
+    { id: 'net',    name: 'Network Diagnostics',         icon: 'globe',        soon: true },
+    { id: 'gen',    name: 'Generators (UUIDv7, Passwords)', icon: 'dices',     soon: true },
+    { id: 'tokens', name: 'Token Counter',               icon: 'bar-chart-3',  soon: true }
+  ];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var els = {
+    nav: $('nav'), navEmpty: $('navEmpty'), filter: $('toolFilter'),
+    input: $('input'), counter: $('counter'), drop: $('dropZone'),
+    run: $('runBtn'), runIcon: $('runIcon'),
+    paste: $('pasteBtn'), clearInput: $('clearInput'), clearAll: $('clearAll'),
+    apiDot: $('apiDot'), apiText: $('apiText'),
+    tabs: document.querySelectorAll('.tab'),
+    timeBadge: $('timeBadge'), timeVal: $('timeVal'), statusBadge: $('statusBadge'),
+    copy: $('copyBtn'), copyLabel: $('copyLabel'),
+    empty: $('emptyState'), formattedView: $('formattedView'), formattedOut: $('formattedOut'),
+    warnBox: $('warnBox'), metricsBox: $('metricsBox'), rawView: $('rawView')
+  };
+
+  var state = { tab: 'formatted', formattedText: '', rawText: '', hasResult: false, busy: false };
+  var HTTP_TEXT = { 200: 'OK', 422: 'Unprocessable Entity', 500: 'Internal Server Error', 501: 'Not Implemented' };
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function icons() { if (window.lucide) { window.lucide.createIcons(); } }
+
+  /* ---------- Sidebar ---------- */
+  function renderNav(query) {
+    var q = (query || '').trim().toLowerCase();
+    var html = '';
+    var count = 0;
+    TOOLS.forEach(function (t) {
+      if (q && t.name.toLowerCase().indexOf(q) === -1) { return; }
+      count++;
+      var base = 'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left ';
+      var cls = t.active
+        ? base + 'bg-[#6366f1]/15 text-indigo-200 ring-1 ring-inset ring-[#6366f1]/40'
+        : base + 'text-zinc-400 hover:bg-[#121216] hover:text-zinc-200';
+      html += '<button type="button" class="' + cls + '"' + (t.active ? ' aria-current="page"' : '') + ' data-tool="' + t.id + '">' +
+        '<i data-lucide="' + t.icon + '" class="h-4 w-4 shrink-0"></i>' +
+        '<span class="min-w-0 flex-1 truncate">' + esc(t.name) + '</span>' +
+        (t.soon ? '<span class="rounded bg-[#1c1c22] px-1.5 py-0.5 text-[10px] text-zinc-400">Soon</span>' : '') +
+        '</button>';
+    });
+    els.nav.innerHTML = html;
+    els.navEmpty.classList.toggle('hidden', count !== 0);
+    icons();
+  }
+
+  els.filter.addEventListener('input', function () { renderNav(els.filter.value); });
+  els.nav.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-tool]');
+    if (!btn) { return; }
+    var tool = TOOLS.filter(function (t) { return t.id === btn.getAttribute('data-tool'); })[0];
+    if (tool && tool.soon) { flash(els.copyLabel, tool.name.split(' (')[0] + ' — coming soon', 1600); }
+  });
+
+  /* ---------- Input ---------- */
+  function updateCounter() {
+    var v = els.input.value;
+    var lines = v.length ? v.split(/\r\n|\r|\n/).length : 0;
+    els.counter.textContent = v.length + ' chars · ' + lines + ' lines';
+  }
+  els.input.addEventListener('input', updateCounter);
+
+  els.paste.addEventListener('click', function () {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      els.input.focus();
+      return;
+    }
+    navigator.clipboard.readText().then(function (t) {
+      els.input.value = t;
+      updateCounter();
+      els.input.focus();
+    }).catch(function () { els.input.focus(); });
+  });
+
+  els.clearInput.addEventListener('click', function () {
+    els.input.value = '';
+    updateCounter();
+    els.input.focus();
+  });
+
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    els.drop.addEventListener(ev, function (e) { e.preventDefault(); els.drop.classList.add('drop-active'); });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    els.drop.addEventListener(ev, function (e) { e.preventDefault(); els.drop.classList.remove('drop-active'); });
+  });
+  els.drop.addEventListener('drop', function (e) {
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) { return; }
+    var reader = new FileReader();
+    reader.onload = function () { els.input.value = String(reader.result); updateCounter(); };
+    reader.onerror = function () { showError('Could not read file "' + file.name + '".'); };
+    reader.readAsText(file, 'UTF-8');
+  });
+
+  /* ---------- Tabs ---------- */
+  function setTab(name) {
+    state.tab = name;
+    els.tabs.forEach(function (t) {
+      var on = t.getAttribute('data-tab') === name;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.className = 'tab h-full border-b-2 px-3 font-medium ' +
+        (on ? 'border-[#8b5cf6] text-zinc-100' : 'border-transparent text-zinc-500 hover:text-zinc-300');
+    });
+    renderOutputVisibility();
+  }
+  els.tabs.forEach(function (t) {
+    t.addEventListener('click', function () { setTab(t.getAttribute('data-tab')); });
+  });
+
+  function renderOutputVisibility() {
+    els.empty.classList.toggle('hidden', state.hasResult);
+    els.formattedView.classList.toggle('hidden', !state.hasResult || state.tab !== 'formatted');
+    els.rawView.classList.toggle('hidden', !state.hasResult || state.tab !== 'raw');
+  }
+
+  /* ---------- JSON highlight ---------- */
+  function highlightJson(json) {
+    return esc(json).replace(
+      /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      function (m) {
+        var cls = 'j-num';
+        if (/^"/.test(m)) { cls = /:$/.test(m) ? 'j-key' : 'j-str'; }
+        else if (/true|false/.test(m)) { cls = 'j-bool'; }
+        else if (/null/.test(m)) { cls = 'j-null'; }
+        return '<span class="' + cls + '">' + m + '</span>';
+      });
+  }
+
+  /* ---------- Rendering results ---------- */
+  function setStatus(code, ok) {
+    var label = code ? code + ' ' + (HTTP_TEXT[code] || '') : 'Network Error';
+    els.statusBadge.textContent = label.trim();
+    els.statusBadge.className = 'rounded-md border px-2 py-0.5 font-mono text-xs ' +
+      (ok ? 'border-green-500/30 bg-green-500/10 text-green-400' : 'border-red-500/30 bg-red-500/10 text-red-400');
+    els.timeBadge.classList.remove('hidden');
+    els.timeBadge.classList.add('inline-flex');
+  }
+
+  function renderResult(payload, status, clientMs) {
+    var ok = status >= 200 && status < 300 && payload && payload.success !== false;
+    var serverMs = payload && payload.metrics && typeof payload.metrics.duration_ms === 'number' ? payload.metrics.duration_ms : null;
+    els.timeVal.textContent = (serverMs !== null ? serverMs.toFixed(2) : clientMs.toFixed(0)) + ' ms';
+    setStatus(status, ok);
+    els.statusBadge.classList.remove('hidden');
+
+    var data = payload ? payload.data : null;
+    var text = data === null || data === undefined ? '' : (typeof data === 'string' ? data : JSON.stringify(data, null, 2));
+    state.formattedText = text;
+    state.rawText = JSON.stringify(payload, null, 2);
+    state.hasResult = true;
+
+    els.formattedOut.textContent = text.length ? text : (ok ? '(empty result)' : '');
+    els.formattedOut.className = 'whitespace-pre-wrap break-words font-mono text-[13px] leading-6 ' + (ok ? 'text-zinc-200' : 'text-red-300');
+
+    var warnings = (payload && payload.warnings) || [];
+    els.warnBox.innerHTML = warnings.map(function (w) {
+      return '<div class="flex items-start gap-2 rounded-lg border ' + (ok ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-red-500/30 bg-red-500/10 text-red-300') + ' px-3 py-2 text-xs">' +
+        '<i data-lucide="' + (ok ? 'alert-triangle' : 'circle-alert') + '" class="mt-0.5 h-3.5 w-3.5 shrink-0"></i><span>' + esc(w) + '</span></div>';
+    }).join('');
+    els.warnBox.classList.toggle('hidden', warnings.length === 0);
+
+    var metrics = (payload && payload.metrics) || {};
+    var keys = Object.keys(metrics);
+    els.metricsBox.innerHTML = keys.map(function (k) {
+      return '<span class="rounded-md border border-[#27272a] bg-[#121216] px-2 py-1 font-mono text-xs text-zinc-400">' +
+        esc(k) + ': <span class="text-zinc-200">' + esc(metrics[k]) + '</span></span>';
+    }).join('');
+    els.metricsBox.classList.toggle('hidden', keys.length === 0);
+    els.metricsBox.classList.toggle('flex', keys.length > 0);
+
+    els.rawView.innerHTML = highlightJson(state.rawText);
+    renderOutputVisibility();
+    icons();
+  }
+
+  function showError(message) {
+    renderResult({ success: false, data: null, format: 'text', warnings: [message], metrics: {} }, 0, 0);
+  }
+
+  /* ---------- Run ---------- */
+  function setBusy(on) {
+    state.busy = on;
+    els.run.disabled = on;
+    els.runIcon.outerHTML = '<i id="runIcon" data-lucide="' + (on ? 'loader-2' : 'play') + '" class="h-4 w-4' + (on ? ' spin' : '') + '"></i>';
+    els.runIcon = $('runIcon');
+    icons();
+  }
+
+  function run() {
+    if (state.busy) { return; }
+    setBusy(true);
+    var t0 = performance.now();
+    var status = 0;
+    fetch('/api/ping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: els.input.value })
+    }).then(function (res) {
+      status = res.status;
+      return res.json().catch(function () { return { success: false, data: null, format: 'text', warnings: ['Server returned a non-JSON response.'], metrics: {} }; });
+    }).then(function (payload) {
+      renderResult(payload, status, performance.now() - t0);
+    }).catch(function () {
+      showError('Cannot reach the API. Check that web_app.py is running.');
+      checkHealth();
+    }).then(function () {
+      setBusy(false);
+    });
+  }
+  els.run.addEventListener('click', run);
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+  });
+
+  /* ---------- Clear all ---------- */
+  els.clearAll.addEventListener('click', function () {
+    els.input.value = '';
+    updateCounter();
+    state.hasResult = false;
+    state.formattedText = '';
+    state.rawText = '';
+    els.timeBadge.classList.add('hidden');
+    els.timeBadge.classList.remove('inline-flex');
+    els.statusBadge.classList.add('hidden');
+    els.formattedOut.textContent = '';
+    els.rawView.textContent = '';
+    renderOutputVisibility();
+    els.input.focus();
+  });
+
+  /* ---------- Copy ---------- */
+  function flash(node, text, ms) {
+    var prev = node.getAttribute('data-label') || node.textContent;
+    node.setAttribute('data-label', prev);
+    node.textContent = text;
+    clearTimeout(node._t);
+    node._t = setTimeout(function () { node.textContent = prev; node.removeAttribute('data-label'); }, ms);
+  }
+
+  els.copy.addEventListener('click', function () {
+    var text = state.tab === 'raw' ? state.rawText : state.formattedText;
+    if (!state.hasResult || !text) { flash(els.copyLabel, 'Нечего копировать', 1400); return; }
+    var done = function () { flash(els.copyLabel, 'Скопировано', 1400); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () { fallbackCopy(text); done(); });
+    } else {
+      fallbackCopy(text);
+      done();
+    }
+  });
+
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) { /* clipboard unavailable */ }
+    document.body.removeChild(ta);
+  }
+
+  /* ---------- API health ---------- */
+  function setApi(connected) {
+    els.apiDot.classList.toggle('off', !connected);
+    els.apiText.textContent = 'API: ' + location.host + (connected ? ' Connected' : ' Offline');
+  }
+  function checkHealth() {
+    fetch('/api/health', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('bad status')); })
+      .then(function (j) { setApi(j && j.status === 'ok'); })
+      .catch(function () { setApi(false); });
+  }
+
+  /* ---------- Init ---------- */
+  renderNav('');
+  updateCounter();
+  renderOutputVisibility();
+  checkHealth();
+  setInterval(checkHealth, 5000);
+  icons();
+})();
+</script>
+</body>
+</html>
